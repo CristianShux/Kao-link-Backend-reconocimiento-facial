@@ -1,4 +1,3 @@
-import face_recognition
 import numpy as np
 import base64
 import cv2
@@ -8,19 +7,36 @@ from PIL import Image
 import random
 
 from crud.crudEmpleado import RegistroHorario
+
 from reconocimiento.service.reconocimiento import identificar_persona, identificar_gesto, buscar_mejor_match
 from reconocimiento.utils.utilsVectores import guardar_vector
 
 from fastapi.websockets import WebSocketState
 
+# --- INICIO DE LA IMPLEMENTACIÓN DE CARGA PEREZOSA PARA face_recognition ---
+_face_recognition_instance = None
+
+def _get_face_recognition_instance():
+    """
+    Retorna la instancia de face_recognition, cargándola solo la primera vez.
+    """
+    global _face_recognition_instance
+    if _face_recognition_instance is None:
+        print("INFO: Cargando modelos de face_recognition por primera vez en serverReconocimiento.py. Esto puede tardar unos segundos.")
+        import face_recognition # <-- ¡La importación ocurre AQUI, LA PRIMERA VEZ QUE SE LLAMA ESTA FUNCION!
+        _face_recognition_instance = face_recognition
+        print("INFO: Modelos de face_recognition cargados.")
+    return _face_recognition_instance
+# --- FIN DE LA IMPLEMENTACIÓN DE CARGA PEREZOSA ---
+
+
 async def safe_send(ws, msg):
     if ws.client_state == WebSocketState.CONNECTED:
         await ws.send_text(msg)
 
-# eSTA ES LA VERSION QUE ANDABA
-
 async def registrar_empleado(websocket, data, id_empleado):
     """Registra un empleado pidiendo imágenes de a una, validando gesto por gesto."""
+    fr = _get_face_recognition_instance() # Obtén la instancia de face_recognition
     gestos_requeridos = [("normal", None), ("sonrisa", "sonrisa"), ("giro", "giro")]
     vectores_guardar = {}  # Diccionario para almacenar los vectores temporales
 
@@ -31,13 +47,15 @@ async def registrar_empleado(websocket, data, id_empleado):
                 await websocket.send_text(f"📸 Por favor, envía imagen del gesto: '{tipo}'")
                 primer_intento = False  # Ya pedimos la imagen
 
-            data = await websocket.receive_json()
+            data_imagen = await websocket.receive_json() # Asume que el frontend envía la imagen correcta en cada loop
 
             try:
-                image_data = base64.b64decode(data[f"imagen_{tipo}"])
+                image_data = base64.b64decode(data_imagen[f"imagen_{tipo}"])
                 image = np.array(Image.open(BytesIO(image_data)))
                 rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                face_encodings = face_recognition.face_encodings(rgb_image)
+
+                # Usa 'fr' que obtuviste de la carga perezosa
+                face_encodings = fr.face_encodings(rgb_image)
 
                 if not face_encodings:
                     await websocket.send_text(f"❌ No se detectó rostro en imagen '{tipo}', intenta de nuevo")
@@ -68,10 +86,13 @@ async def registrar_empleado(websocket, data, id_empleado):
 
 
 async def verificar_identidad(websocket, data):
+    fr = _get_face_recognition_instance() # Obtén la instancia de face_recognition
     image_data = base64.b64decode(data["imagen"])
     image = np.array(Image.open(BytesIO(image_data)))
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    face_encodings = face_recognition.face_encodings(rgb_image)
+
+    # Usa 'fr' que obtuviste de la carga perezosa
+    face_encodings = fr.face_encodings(rgb_image)
 
     if not face_encodings:
         await websocket.send_text("🚫 No se detectó un rostro válido")
@@ -102,13 +123,15 @@ async def verificar_identidad(websocket, data):
             image_data_gesto = base64.b64decode(nueva_data["imagen"])
             image_gesto = np.array(Image.open(BytesIO(image_data_gesto)))
             rgb_gesto = cv2.cvtColor(image_gesto, cv2.COLOR_BGR2RGB)
-            face_encodings_gesto = face_recognition.face_encodings(rgb_gesto)
+
+            # Usa 'fr' para face_encodings_gesto
+            face_encodings_gesto = fr.face_encodings(rgb_gesto)
 
             if not face_encodings_gesto:
                 await safe_send(websocket, "❌ No se detectó rostro en la imagen del gesto")
                 continue
 
-            if not identificar_gesto(rgb_gesto, gesto_requerido):
+            if not identificar_gesto(rgb_gesto, gesto_requerido): # Asumo que esto no usa face_recognition directamente
                 continue
 
             # 🎉 Gesto válido -> registrar
