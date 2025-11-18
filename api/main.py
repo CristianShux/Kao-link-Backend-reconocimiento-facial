@@ -36,23 +36,6 @@ app.add_middleware(
 )
 
 
-@app.websocket("/")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    print("¡Un cliente de WebSocket se conectó!")
-    try:
-        while True:
-            # Podés recibir datos del frontend
-            data = await websocket.receive_text()
-            print(f"Mensaje recibido: {data}")
-            
-            # Y enviarle una respuesta
-            await websocket.send_text(f"Tu mensaje fue: {data}")
-            
-    except WebSocketDisconnect:
-        print("El cliente se desconectó")
-
-
 @app.get("/health")
 def health_check():
     """
