@@ -75,7 +75,7 @@ def health_check():
             }
         )
 
-@app.websocket("/ws/")
+@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket abierto, esperando imágenes...")
